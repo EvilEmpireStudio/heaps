@@ -53,6 +53,8 @@ class CacheFile extends Cache {
 	function getPlatformTag() {
 		#if usesys
 		return Sys.systemName().toLowerCase();
+		#elseif vulkan
+		return "vk";
 		#elseif hlsdl
 		return "gl";
 		#elseif hldx

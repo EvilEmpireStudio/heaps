@@ -39,7 +39,7 @@ class Window {
 		eventTargets = new List();
 		resizeEvents = new List();
 		#if hlsdl
-		window = new sdl.Window(title, width, height);
+		window = new sdl.Window(title, width, height #if vulkan , 0xFFFFFFFF #end);
 		#elseif hldx
 		window = new dx.Window(title, width, height);
 		#end

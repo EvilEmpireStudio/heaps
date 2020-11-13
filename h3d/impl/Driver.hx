@@ -30,6 +30,12 @@ typedef VertexBuffer = { b : lime.graphics.opengl.GLBuffer, stride : Int };
 typedef Texture = { t : lime.graphics.opengl.GLTexture, width : Int, height : Int, internalFmt : Int, pixelFmt : Int, bits : Int, bind : Int };
 typedef DepthBuffer = { r : lime.graphics.opengl.GLRenderbuffer };
 typedef Query = {};
+#elseif vulkan
+typedef IndexBuffer = { b : hl.Ref<Void>, bits : Int };
+typedef VertexBuffer = { b : hl.Ref<Void>, stride : Int };
+typedef Texture = { t : hl.Ref<Void> };
+typedef DepthBuffer = { r : hl.Ref<Void> };
+typedef Query = { q : hl.Ref<Void> };
 #elseif hlsdl
 typedef IndexBuffer = { b : sdl.GL.Buffer, is32 : Bool };
 typedef VertexBuffer = { b : sdl.GL.Buffer, stride : Int };

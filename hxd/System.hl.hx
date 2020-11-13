@@ -63,11 +63,28 @@ class System {
 		#elseif hlsdl
 		if( !sdl.Sdl.processEvents(@:privateAccess hxd.Window.inst.onEvent) )
 			return false;
+		#elseif stadia
+		if (!vk.Stadia.processEvents())
+			return false;
 		#end
 
 		// loop
 		timeoutTick();
-		if( loopFunc != null ) loopFunc();
+		if( loopFunc != null ) {
+			#if stadia
+			if (!vk.Stadia.isStreaming()) {
+				if (Audio.ME != null)
+					Audio.ME.pauseMusic(true);
+			}
+			else {
+				if (Audio.ME != null)
+					Audio.ME.pauseMusic(false);
+				loopFunc();
+			}
+			#else
+			loopFunc();
+			#end
+		}
 
 		// present
 		var cur = h3d.Engine.getCurrent();
@@ -103,6 +120,21 @@ class System {
 		#elseif hldx
 			@:privateAccess Window.inst = new Window(title, width, height);
 			init();
+		#elseif stadia
+			vk.Stadia.ggpInit();
+			for (i in 0...10) {
+				if (i == 9) 
+					Sys.exit(0);
+				var r = vk.Stadia.ggpResolution();
+				if (r != -1) {
+					width = r >>> 16;
+					height = r & 0xFFFF;
+					break;		
+				}
+				Sys.sleep(0.5);
+			}
+			@:privateAccess Window.inst = new Window(title, width, height); // NOTE : Using a "dummy" window for ggp ?
+			init();
 		#else
 			@:privateAccess Window.inst = new Window(title, width, height);
 			init();
@@ -135,6 +167,9 @@ class System {
 			hxt.advance_frame();
 			#end
 		}
+		#if stadia
+		vk.Stadia.ggpShutdown();
+		#end
 		Sys.exit(0);
 	}
 

@@ -8,6 +8,8 @@ import sdl.GameController;
 import haxe.GameController;
 #elseif hldx
 import dx.GameController;
+#elseif stadia
+import vk.Stadia.GamePad;
 #else
 private typedef Event = {
 }
@@ -146,6 +148,7 @@ class Pad {
 		#elseif flash CONFIG_XBOX
 		#elseif (hldx || usesys) GameController.CONFIG
 		#elseif js  CONFIG_JS_STD
+		#elseif stadia GamePad.CONFIG
 		#else ({}:Dynamic) #end;
 
 	public var connected(default, null) = true;
@@ -216,6 +219,9 @@ class Pad {
 	#elseif (hldx || hlsdl || usesys)
 	var d : GameController;
 	static var pads : Map<Int, hxd.Pad> = new Map();
+	#elseif stadia
+	var d : GamePad;
+	static var pads : Array<hxd.Pad> = []; // Array since "Map<haxe.Int64, hxd.Pad>" not working
 	#end
 
 	/**
@@ -325,6 +331,11 @@ class Pad {
 				pad.connected = false;
 				pad.onDisconnect();
 			});
+			haxe.MainLoop.add(syncPads);
+		}
+		#elseif stadia
+		if (!initDone) {
+			initDone = true;
 			haxe.MainLoop.add(syncPads);
 		}
 		#end
@@ -487,6 +498,22 @@ class Pad {
 		}
 	}
 
+	#elseif stadia
+
+	inline function _setAxis (axisId : Int, value : Int) {
+		var v = value / 0x7FFF;
+		_detectAnalogButton(axisId, v);
+		values[axisId] = v;
+		if		(axisId == 0) xAxis = v;
+		else if (axisId == 1) yAxis = v;
+	}
+
+	static function syncPads() {
+		for (p in pads)
+			for (i in 0...p.buttons.length)
+				p.prevButtons[i] = p.buttons[i];
+	}
+	
 	#end
 
 }
