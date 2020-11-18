@@ -70,6 +70,7 @@ class VkDriver extends h3d.impl.Driver {
 		if (t.t != null) {
 			Vk.deleteTexture(t.t.t);
 			t.t.t = null;
+			t.t = null;
 		}
 	}
 

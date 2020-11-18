@@ -178,7 +178,7 @@ class Pad {
 	public function rumble( strength : Float, time_s : Float ){
 		#if hlsdl
 		d.rumble( strength, Std.int(time_s*1000.) );
-		#elseif (hldx || usesys)
+		#elseif (hldx || usesys || stadia)
 		d.rumble( strength, time_s );
 		#end
 	}

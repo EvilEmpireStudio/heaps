@@ -122,16 +122,20 @@ class System {
 			init();
 		#elseif stadia
 			vk.Stadia.ggpInit();
-			for (i in 0...10) {
-				if (i == 9) 
+			for (i in 0...100) {
+				if (i == 99) 
 					Sys.exit(0);
-				var r = vk.Stadia.ggpResolution();
-				if (r != -1) {
-					width = r >>> 16;
-					height = r & 0xFFFF;
-					break;		
+				if (!vk.Stadia.processEvents())
+					break;
+				if (vk.Stadia.isStarted()) {
+					var r = vk.Stadia.ggpResolution();
+					if (r != -1) {
+						width = r >>> 16;
+						height = r & 0xFFFF;
+						break;		
+					}
 				}
-				Sys.sleep(0.5);
+				Sys.sleep(0.6); // Init timeout : 1 minute (0.6*100)
 			}
 			@:privateAccess Window.inst = new Window(title, width, height); // NOTE : Using a "dummy" window for ggp ?
 			init();
