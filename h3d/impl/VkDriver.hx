@@ -220,6 +220,7 @@ class VkDriver extends h3d.impl.Driver {
 		else
 		{	// A new one, compile it :
 			var glout = new hxsl.GlslOut();
+			glout.setVulkanUBSize(Vk.getUniformBufferSize() >> 4); // >> 4 : BytesToVec4Count
 			var vs = glout.run(shader.vertex.data, 1);
 			var vf = glout.getVulkanVertexFormat();
 			var fs = glout.run(shader.fragment.data, -1);
@@ -429,7 +430,7 @@ class VkDriver extends h3d.impl.Driver {
 
 	override public function drawInstanced(ibuf : IndexBuffer, commands : h3d.impl.InstanceBuffer ) {
 		Vk.bindIndexBuffer(ibuf.b);
-		Vk.drawIndexedIndrect(commands.data, commands.commandCount, commands.commandCount * 20);
+		Vk.drawIndexedIndirect(commands.data, commands.commandCount, commands.commandCount * 20);
 	}
 
 	override public function setRenderFlag(r : RenderFlag, value : Int) {

@@ -221,7 +221,7 @@ class Pad {
 	static var pads : Map<Int, hxd.Pad> = new Map();
 	#elseif stadia
 	var d : GamePad;
-	static var pads : Array<hxd.Pad> = []; // Array since "Map<haxe.Int64, hxd.Pad>" not working
+	static var pads : Array<hxd.Pad> = [];
 	#end
 
 	/**

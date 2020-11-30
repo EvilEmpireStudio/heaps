@@ -55,6 +55,8 @@ class GlslOut {
 	var locInID : Int;
 	var locOutID : Int;
 	var vertexFormat : Int;	// (3bits = (vecTypeID << 2) | vecSize) * eltCount, with eltCount <= 8
+	var curVar : TVar = null;
+	var vec4CountMaxUB : Int;
 	//
 
 	public function new() {
@@ -156,10 +158,22 @@ class GlslOut {
 			addVar(v);
 			v.type = old;
 			add("[");
-			switch( size ) {
-			case SVar(v): ident(v);
-			case SConst(1) if( intelDriverFix ): add(2);
-			case SConst(n): add(n);
+			if (vulkanShader != 0) {
+				switch (size) { 
+				case SVar(v): ident(v);
+				case SConst(n):
+					if (((v.kind == Global) || (v.kind == Param)) && 
+						(Std.string(v.type).indexOf("TSampler") == -1))
+							add(vec4CountMaxUB);
+					else	add(n);
+				} 
+			}
+			else { 
+				switch( size ) {
+				case SVar(v): ident(v);
+				case SConst(1) if( intelDriverFix ): add(2);
+				case SConst(n): add(n);	
+				}
 			}
 			add("]");
 		case TBuffer(t, size):
@@ -269,7 +283,25 @@ class GlslOut {
 		switch( e.e ) {
 		case TConst(c):
 			switch( c ) {
-			case CInt(v): add(v);
+			case CInt(v):
+				if ((vulkanShader != 0) && (curVar != null)) {
+					switch (curVar.type) {
+					case TArray(t, s):
+						switch (t) {
+						case TVec(4, float):
+							switch (curVar.kind) {
+								case Global: add("pc.offUBs[0]+"); add(v);
+								case Param:	 add("pc.offUBs[1]+"); add(v);
+								default:	 add(v);
+							}
+						default:			 add(v);
+						}
+					default: add(v);
+					}
+					curVar = null;
+					return;
+				}
+				add(v);
 			case CFloat(f):
 				var str = "" + f;
 				add(str);
@@ -280,6 +312,7 @@ class GlslOut {
 			case CBool(b): add(b);
 			}
 		case TVar(v):
+			curVar = v;
 			ident(v);
 		case TGlobal(g):
 			add(GLOBALS.get(g));
@@ -537,10 +570,9 @@ class GlslOut {
 		}
 	}
 
-	public function getVulkanVertexFormat() : Int { 
-		// 3 bits unused | 1 bit multiVB yes/no | 4 bits for elements count | 24 bits for elements description (up to 8*3bits) :
-		return (locInID << 24) | vertexFormat;
-	}
+	// 3 bits unused | 1 bit multiVB yes/no | 4 bits for elements count | 24 bits for elements description (up to 8*3bits) :
+	public function getVulkanVertexFormat() : Int { return (locInID << 24) | vertexFormat; }
+	public function setVulkanUBSize(s : Int) { vec4CountMaxUB = s; }
 
 	function initVar( v : TVar ) {
 		var bClose = false;
@@ -697,6 +729,9 @@ class GlslOut {
 			decl("#version 450");
 			decl("layout(std140) uniform;");
 			decl("layout(std430) buffer;");
+			decl("layout(push_constant) uniform PC {");
+			if (vulkanShader > 0) decl("\tlayout(offset= 0) int offUBs[2];\n} pc;");
+			else 				  decl("\tlayout(offset=16) int offUBs[2];\n} pc;");
 		}
 		else if( isES )
 			decl("#version " + (version < 100 ? 100 : version) + (version > 150 ? " es" : ""));
