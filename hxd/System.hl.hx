@@ -121,14 +121,14 @@ class System {
 			@:privateAccess Window.inst = new Window(title, width, height);
 			init();
 		#elseif stadia
-			vk.Stadia.ggpInit();
+			vk.Stadia.init();
 			for (i in 0...100) {
 				if (i == 99) 
 					Sys.exit(0);
 				if (!vk.Stadia.processEvents())
 					break;
 				if (vk.Stadia.isStarted()) {
-					var r = vk.Stadia.ggpResolution();
+					var r = vk.Stadia.getResolution();
 					if (r != -1) {
 						width = r >>> 16;
 						height = r & 0xFFFF;
@@ -137,7 +137,7 @@ class System {
 				}
 				Sys.sleep(0.6); // Init timeout : 1 minute (0.6*100)
 			}
-			@:privateAccess Window.inst = new Window(title, width, height); // NOTE : Using a "dummy" window for ggp ?
+			@:privateAccess Window.inst = new Window(title, width, height);
 			init();
 		#else
 			@:privateAccess Window.inst = new Window(title, width, height);
@@ -172,7 +172,7 @@ class System {
 			#end
 		}
 		#if stadia
-		vk.Stadia.ggpShutdown();
+		vk.Stadia.cleanUp();
 		#end
 		Sys.exit(0);
 	}
