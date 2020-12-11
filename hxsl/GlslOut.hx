@@ -579,13 +579,13 @@ class GlslOut {
 		if (vulkanShader != 0) {
 			switch( v.kind ) {
 			case Param, Global:
-				var setID : Int = (vulkanShader > 0) ? 0 : 1;
 				if (Std.string(v.type).indexOf("TSampler") == -1) {
+					var setID : Int = (vulkanShader > 0) ? 0 : 1;
 					var bindingID : Int = (v.kind == Global) ? 0 : 1;
 					add("layout(set=" + setID + ", binding=" + bindingID + ") uniform U" + bindingID + " {\n\t");
 					bClose = true;
 				}
-				else add("layout(set=" + setID + ", binding=2) uniform ");
+				else add("layout(set=2, binding=0) uniform ");
 			case Input:
 				switch (v.type) {
 				case TVec(s, t):

@@ -263,11 +263,11 @@ class VkDriver extends h3d.impl.Driver {
 		b0 <<= 4;	b0 |= Pass.getBlendAlphaDst(bits);
 		b0 <<= 3;	b0 |= Pass.getBlendOp(bits);
 		b0 <<= 3;	b0 |= Pass.getBlendAlphaOp(bits);
-		b0 <<= 1;	b0 |= Pass.getDepthWrite(bits);
-		b0 <<= 3;	b0 |= Pass.getDepthTest(bits);
+		b0 <<= 4;	b0 |= pass.colorMask;
 
 		// b1 == 23 bits & b2 == 30 bits :
-		b1 = pass.colorMask; // 4 bits
+		b1 = Pass.getDepthWrite(bits); // 1 bit
+		b1 <<= 3;	b1 |= Pass.getDepthTest(bits);
 		if (pass.stencil != null) {
 			@:privateAccess var stencilOpBits = pass.stencil.opBits;
 			@:privateAccess var stencilMaskBits = pass.stencil.maskBits;
