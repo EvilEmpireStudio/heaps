@@ -261,6 +261,11 @@ class System {
 			cursorVisible = true;
 			Cursor.show(true);
 		}
+		#elseif stadia
+		switch (c) { // TODO : case Move / TextInput / ...
+			case Button: vk.Stadia.setCursor(1);
+			default: 	 vk.Stadia.setCursor(0);
+		}
 		#end
 	}
 
