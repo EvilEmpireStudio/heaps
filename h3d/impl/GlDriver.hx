@@ -114,6 +114,10 @@ private class CompiledShader {
 		this.vertex = vertex;
 		this.shader = shader;
 	}
+	#if hlxxhash
+	public var globalsHash : Int = 0;
+	public var paramsHash : Int = 0;
+	#end
 }
 
 private class CompiledAttribute {
@@ -479,7 +483,16 @@ class GlDriver extends Driver {
 		case Globals:
 			if( s.globals != null ) {
 				#if hl
+				#if hlxxhash
+				var src = streamData(hl.Bytes.getArray(buf.globals.toData()), 0, s.shader.globalsSize * 16);
+				var hashVal = xxhash.Hash.h32(src, s.shader.globalsSize * 16, 0x0);
+				if (hashVal != s.globalsHash) {
+					gl.uniform4fv(s.globals, src, 0, s.shader.globalsSize * 4);
+					s.globalsHash = hashVal;
+				}
+				#else
 				gl.uniform4fv(s.globals, streamData(hl.Bytes.getArray(buf.globals.toData()), 0, s.shader.globalsSize * 16), 0, s.shader.globalsSize * 4);
+				#end
 				#else
 				var a = buf.globals.subarray(0, s.shader.globalsSize * 4);
 				gl.uniform4fv(s.globals, a);
@@ -488,7 +501,16 @@ class GlDriver extends Driver {
 		case Params:
 			if( s.params != null ) {
 				#if hl
+				#if hlxxhash
+				var src = streamData(hl.Bytes.getArray(buf.params.toData()), 0, s.shader.paramsSize * 16);
+				var hashVal = xxhash.Hash.h32(src, s.shader.paramsSize * 16, 0x0);
+				if (hashVal != s.paramsHash) {
+					gl.uniform4fv(s.params, src, 0, s.shader.paramsSize * 4);
+					s.paramsHash = hashVal;
+				}
+				#else
 				gl.uniform4fv(s.params, streamData(hl.Bytes.getArray(buf.params.toData()), 0, s.shader.paramsSize * 16), 0, s.shader.paramsSize * 4);
+				#end
 				#else
 				var a = buf.params.subarray(0, s.shader.paramsSize * 4);
 				gl.uniform4fv(s.params, a);
