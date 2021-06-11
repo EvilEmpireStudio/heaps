@@ -64,8 +64,6 @@ class Engine {
 		window.addResizeEvent(onWindowResize);
 		#if macro
 		driver = new h3d.impl.NullDriver();
-		#elseif vulkan
-		driver = new h3d.impl.VkDriver(antiAlias);
 		#elseif (js || cpp || hlsdl || usegl)
 		driver = new h3d.impl.GlDriver(antiAlias);
 		#elseif flash

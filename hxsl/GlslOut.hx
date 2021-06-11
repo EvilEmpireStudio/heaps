@@ -50,15 +50,6 @@ class GlslOut {
 	public var glES : Null<Float>;
 	public var version : Null<Int>;
 
-	// Vulkan specific stuff :
-	var vulkanShader : Int = 0; // ==0 --> Not vulkan, >0 --> VertexShader, <0 --> FragmentShader
-	var locInID : Int;
-	var locOutID : Int;
-	var vertexFormat : Int;	// (3bits = (vecTypeID << 2) | vecSize) * eltCount, with eltCount <= 8
-	var curVar : TVar = null;
-	var vec4CountMaxUB : Int;
-	//
-
 	public function new() {
 		varNames = new Map();
 		allNames = new Map();
@@ -158,22 +149,10 @@ class GlslOut {
 			addVar(v);
 			v.type = old;
 			add("[");
-			if (vulkanShader != 0) {
-				switch (size) { 
-				case SVar(v): ident(v);
-				case SConst(n):
-					if (((v.kind == Global) || (v.kind == Param)) && 
-						(Std.string(v.type).indexOf("TSampler") == -1))
-							add(vec4CountMaxUB);
-					else	add(n);
-				} 
-			}
-			else { 
-				switch( size ) {
-				case SVar(v): ident(v);
-				case SConst(1) if( intelDriverFix ): add(2);
-				case SConst(n): add(n);	
-				}
+			switch( size ) {
+			case SVar(v): ident(v);
+			case SConst(1) if( intelDriverFix ): add(2);
+			case SConst(n): add(n);
 			}
 			add("]");
 		case TBuffer(t, size):
@@ -283,25 +262,7 @@ class GlslOut {
 		switch( e.e ) {
 		case TConst(c):
 			switch( c ) {
-			case CInt(v):
-				if ((vulkanShader != 0) && (curVar != null)) {
-					switch (curVar.type) {
-					case TArray(t, s):
-						switch (t) {
-						case TVec(4, float):
-							switch (curVar.kind) {
-								case Global: add("pc.offUBs[0]+"); add(v);
-								case Param:	 add("pc.offUBs[1]+"); add(v);
-								default:	 add(v);
-							}
-						default:			 add(v);
-						}
-					default: add(v);
-					}
-					curVar = null;
-					return;
-				}
-				add(v);
+			case CInt(v): add(v);
 			case CFloat(f):
 				var str = "" + f;
 				add(str);
@@ -312,7 +273,6 @@ class GlslOut {
 			case CBool(b): add(b);
 			}
 		case TVar(v):
-			curVar = v;
 			ident(v);
 		case TGlobal(g):
 			add(GLOBALS.get(g));
@@ -523,8 +483,6 @@ class GlslOut {
 	}
 
 	function varName( v : TVar ) {
-		if ((vulkanShader != 0) && (v.name.toLowerCase() == "sample"))
-			v.name = "sampl"; // Avoid using a reserved word
 		if( v.kind == Output ) {
 			if( isVertex )
 				return "gl_Position";
@@ -570,67 +528,28 @@ class GlslOut {
 		}
 	}
 
-	// 3 bits unused | 1 bit multiVB yes/no | 4 bits for elements count | 24 bits for elements description (up to 8*3bits) :
-	public function getVulkanVertexFormat() : Int { return (locInID << 24) | vertexFormat; }
-	public function setVulkanUBSize(s : Int) { vec4CountMaxUB = s; }
-
-	function initVar( v : TVar ) {
-		var bClose = false;
-		if (vulkanShader != 0) {
-			switch( v.kind ) {
-			case Param, Global:
-				if (Std.string(v.type).indexOf("TSampler") == -1) {
-					var setID : Int = (vulkanShader > 0) ? 0 : 1;
-					var bindingID : Int = (v.kind == Global) ? 0 : 1;
-					add("layout(set=" + setID + ", binding=" + bindingID + ") uniform U" + bindingID + " {\n\t");
-					bClose = true;
-				}
-				else add("layout(set=2, binding=0) uniform ");
-			case Input:
-				switch (v.type) {
-				case TVec(s, t):
-					if ((s < 1) || (s > 4) || (t.getIndex() > 2) || (locInID >= 8))
-						trace("VertexFormat unsupported (s=" + s + ", t=" + t.getIndex() + ", n=" + locInID);
-					var f : Int = (((t == VFloat) ? 0 : 1) << 2) | (s - 1);
-					vertexFormat = (vertexFormat << 3) | f;
-					add("layout(location=" + locInID++ + ") in ");
-				default:
-					trace("GlslOut Vulkan : Vertex data should be packed in (float or int) vectors");
-				}
-			case Var:
-				if (isVertex) add("layout(location=" + locOutID++ + ") out ");
-				else		  add("layout(location=" + locInID++ + ") in ");
-			case Output:
-				if( isVertex ) return;
-				add("layout(location=" + locOutID++ + ") out ");
-			case Function:
+	function initVar( v : TVar ){
+		switch( v.kind ) {
+		case Param, Global:
+			if( v.type.match(TBuffer(_)) )
+				add("layout(std140) ");
+			add("uniform ");
+		case Input:
+			add( isES2 ? "attribute " : "in ");
+		case Var:
+			add( isES2 ? "varying " : (isVertex ? "out " : "in "));
+		case Output:
+			if( isES2 ) {
+				outIndexes.set(v.id, outIndex++);
 				return;
-			case Local:
 			}
-		}
-		else {
-			switch( v.kind ) {
-			case Param, Global:
-				if( v.type.match(TBuffer(_)) )
-					add("layout(std140) ");
-				add("uniform ");
-			case Input:
-				add( isES2 ? "attribute " : "in ");
-			case Var:
-				add( isES2 ? "varying " : (isVertex ? "out " : "in "));
-			case Output:
-				if( isES2 ) {
-					outIndexes.set(v.id, outIndex++);
-					return;
-				}
-				if( isVertex ) return;
-				if( isES )
-					add('layout(location=${outIndex++}) ');
-				add("out ");
-			case Function:
-				return;
-			case Local:
-			}		
+			if( isVertex ) return;
+			if( isES )
+				add('layout(location=${outIndex++}) ');
+			add("out ");
+		case Function:
+			return;
+		case Local:
 		}
 		if( v.qualifiers != null )
 			for( q in v.qualifiers )
@@ -645,8 +564,6 @@ class GlslOut {
 				}
 		addVar(v);
 		add(";\n");
-		if (bClose)
-			add("};\n");
 	}
 
 	function initVars( s : ShaderData ){
@@ -663,13 +580,7 @@ class GlslOut {
 			decl("#extension GL_EXT_draw_buffers : enable");
 	}
 
-	public function run( s : ShaderData, vulkan : Int = 0 ) {
-		if ((vulkanShader = vulkan) != 0) {
-			locInID = 0;
-			locOutID = 0;
-			vertexFormat = 0;
-		}
-
+	public function run( s : ShaderData ) {
 		locals = new Map();
 		decls = [];
 		buf = new StringBuf();
@@ -725,15 +636,7 @@ class GlslOut {
 			add("\n\n");
 		}
 
-		if (vulkanShader != 0) {
-			decl("#version 450");
-			decl("layout(std140) uniform;");
-			decl("layout(std430) buffer;");
-			decl("layout(push_constant) uniform PC {");
-			if (vulkanShader > 0) decl("\tlayout(offset= 0) int offUBs[2];\n} pc;");
-			else 				  decl("\tlayout(offset=16) int offUBs[2];\n} pc;");
-		}
-		else if( isES )
+		if( isES )
 			decl("#version " + (version < 100 ? 100 : version) + (version > 150 ? " es" : ""));
 		else if( version != null )
 			decl("#version " + (version > 150 ? 150 : version));
