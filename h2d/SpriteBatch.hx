@@ -145,6 +145,9 @@ class SpriteBatch extends Drawable {
 		e.batch = null;
 	}
 
+	#if hlnx
+	var flushFreq : Int = 0;
+	#end
 	override function sync(ctx) {
 		super.sync(ctx);
 		if( hasUpdate ) {
@@ -155,7 +158,13 @@ class SpriteBatch extends Drawable {
 				e = e.next;
 			}
 		}
+		#if hlnx
+		if (flushFreq == 0)
+			flush();
+		flushFreq = (flushFreq + 1) & 0x1;
+		#else
 		flush();
+		#end
 	}
 
 	override function getBoundsRec( relativeTo, out, forSize ) {
