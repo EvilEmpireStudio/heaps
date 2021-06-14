@@ -141,11 +141,142 @@ private class CompiledProgram {
 	}
 }
 
+#if mergeBatches
+private class VeryWIP {
+	var c_DrawCountMax(null, never) : Int = 50;
+	var c_DrawEltSize(null, never) : Int = 20; 	// 20 == sizeof(DrawElementsIndirectCommand).
+	public var c_Threshold(default, never) : Int = 100;	// Number of indices MAX per merge
+
+	var indices32b : Bool;	// 32bits or 16bits
+	var indicesCount : Int;	// Current number of indices
+	var drawType : Int;		// TRIANGLES, STRIP, etc.
+	var drawCount : Int;	// Current number of indirect draws
+
+	var drawData : hl.Bytes;
+
+	var indicesBuffer : sdl.GL.Buffer;
+	var indirectBuffer : sdl.GL.Buffer;
+
+	function allocBuffers(bIndirectStream) {
+		var b = GL.createBuffer();
+		GL.bindBuffer(GL.ELEMENT_ARRAY_BUFFER, b);
+		GL.bufferDataSize(GL.ELEMENT_ARRAY_BUFFER, indicesSize() << (indices32b ? 2 : 1), GL.STATIC_DRAW);
+		GL.bindBuffer(GL.ELEMENT_ARRAY_BUFFER, null);
+		indicesBuffer = b;
+
+		b = GL.createBuffer();
+		GL.bindBuffer(GL.DRAW_INDIRECT_BUFFER, b);
+		var type = bIndirectStream ? GL.STREAM_DRAW : GL.DYNAMIC_DRAW;
+		GL.bufferDataSize(GL.DRAW_INDIRECT_BUFFER, c_DrawCountMax * c_DrawEltSize, type);
+		GL.bindBuffer(GL.DRAW_INDIRECT_BUFFER, null);
+		indirectBuffer = b;
+
+		// Init 'drawData' constant data :
+		var offset = 0;
+		for (i in 0...c_DrawCountMax) {
+			drawData.setI32(offset +  4, 1); // instanceCount
+			drawData.setI32(offset + 12, 0); // baseVertex
+			drawData.setI32(offset + 16, 0); // baseInstance
+			offset += c_DrawEltSize;
+		}
+	}
+
+	inline function indicesSize() { return c_DrawCountMax * c_Threshold; }
+
+	inline function toIndicesCount(nTriangles : Int) {
+		switch(drawType) {
+			case GL.TRIANGLES: return nTriangles * 3;
+			default: throw "Not Implemented";
+		}
+	}
+
+	public function new(is32b : Bool, drawT : Int, bIndirectStream : Bool) {
+		indices32b = is32b;
+		indicesCount = 0;
+
+		drawType = drawT;
+		drawCount = 0;
+		
+		drawData = new hl.Bytes(c_DrawCountMax * c_DrawEltSize);
+
+		allocBuffers(bIndirectStream);
+	}
+
+	public function dispose() {
+		GL.deleteBuffer(indicesBuffer);
+		GL.deleteBuffer(indirectBuffer);
+	}
+
+	var curVBStart : Int = 1024 * 1024 * 1024;
+	var curVBEnd : Int = -1;
+	var curVB : sdl.GL.Buffer = null;
+	public function updateVB(ib : IndexBuffer, vb : VertexBuffer, startVertex : Int, vertexCount : Int) {
+		var end : Int = (startVertex + vertexCount);
+		if ((curVB == vb.b) && ((startVertex < curVBEnd) || (end > curVBStart))) {
+			draw(ib);
+			curVBStart = 1024 * 1024 * 1024;
+			curVBEnd = -1;
+			curVB = vb.b;
+			return;
+		}
+		if (startVertex < curVBStart)
+			curVBStart = startVertex;
+		if (end > curVBEnd)
+			curVBEnd = end;
+	}
+
+	// Return : -1 -> NoMerge, 1 : Overflow (Flush and retry), 0 : Success
+	public function merge(src_is32 : Bool, start : Int, nTriangles : Int, draw : Int) : Int {
+		if (nTriangles == 0)
+			return 0;
+		var count = toIndicesCount(nTriangles);
+		if ((count > c_Threshold) || (src_is32 != indices32b) || (draw != drawType))
+			return -1;
+		if ((indicesCount + count) > indicesSize())
+			return 1;
+
+		// GPU -> GPU copy : 
+		var d = indices32b ? 2 : 1;
+		GL.bindBuffer(GL.COPY_WRITE_BUFFER, indicesBuffer);
+		GL.copyBufferSubData(GL.ELEMENT_ARRAY_BUFFER, GL.COPY_WRITE_BUFFER, indicesCount << d, start << d, count << d);
+
+		var offset = drawCount * c_DrawEltSize;
+		drawData.setI32(offset + 0, count);			// indicesCount
+		drawData.setI32(offset + 8, indicesCount);	// firstIndex
+
+		indicesCount += count;
+		drawCount++;
+
+		return 0;
+	}
+
+	// NOTE : Pertinence des bindBuffers de 'restauration' ? (A mon avis, un surcoût + qu'un gain)
+	public function draw(curIndexBuf : IndexBuffer) {
+		if (drawCount == 0)
+			return;
+		/// TMP -->
+		if (drawCount > 1) trace("drawCount = " + drawCount);
+		/// <-- TMP
+		GL.bindBuffer(GL.ELEMENT_ARRAY_BUFFER, indicesBuffer);
+		GL.bindBuffer(GL.DRAW_INDIRECT_BUFFER, indirectBuffer);
+		GL.bufferSubData(GL.DRAW_INDIRECT_BUFFER, 0, drawData, 0, drawCount * c_DrawEltSize);
+		var type = indices32b ? GL.UNSIGNED_INT : GL.UNSIGNED_SHORT;
+		GL.multiDrawElementsIndirect(drawType, type, null, drawCount, 0);
+		GL.bindBuffer(GL.ELEMENT_ARRAY_BUFFER, (curIndexBuf == null) ? null : curIndexBuf.b);
+		GL.bindBuffer(GL.DRAW_INDIRECT_BUFFER, null);
+		indicesCount = 0;
+		drawCount = 0;
+	}
+}
+#end
+
 @:access(h3d.impl.Shader)
 #if (cpp||hlsdl||usegl)
 @:build(h3d.impl.MacroHelper.replaceGL())
 #end
 class GlDriver extends Driver {
+
+	#if mergeBatches var mb : VeryWIP = null; #end
 
 	#if js
 	var canvas : js.html.CanvasElement;
@@ -252,12 +383,18 @@ class GlDriver extends Driver {
 		gl.pixelStorei(GL.UNPACK_ALIGNMENT, 1);
 		gl.finish(); // prevent glError() on first bufferData
 		#end
+
+		#if mergeBatches mb = new VeryWIP(false, GL.TRIANGLES, false); #end
 	}
 
 	override function setRenderFlag( r : RenderFlag, value : Int ) {
 		switch( r ) {
 		case CameraHandness:
-			rightHanded = value > 0;
+			var b : Bool = (value > 0);
+			if (b != rightHanded) {
+				#if mergeBatches mb.draw(curIndexBuffer); #end
+				rightHanded = b;
+			}
 		default:
 		}
 	}
@@ -459,6 +596,8 @@ class GlDriver extends Driver {
 		}
 		if( curShader == p ) return false;
 
+		#if mergeBatches mb.draw(curIndexBuffer); #end
+
 		gl.useProgram(p.p);
 		for( i in curAttribs...p.attribs.length ) {
 			gl.enableVertexAttribArray(i);
@@ -487,13 +626,16 @@ class GlDriver extends Driver {
 				var src = streamData(hl.Bytes.getArray(buf.globals.toData()), 0, s.shader.globalsSize * 16);
 				var hashVal = xxhash.Hash.h32(src, s.shader.globalsSize * 16, 0x0);
 				if (hashVal != s.globalsHash) {
+					#if mergeBatches mb.draw(curIndexBuffer); #end
 					gl.uniform4fv(s.globals, src, 0, s.shader.globalsSize * 4);
 					s.globalsHash = hashVal;
 				}
 				#else
+				#if mergeBatches mb.draw(curIndexBuffer); #end
 				gl.uniform4fv(s.globals, streamData(hl.Bytes.getArray(buf.globals.toData()), 0, s.shader.globalsSize * 16), 0, s.shader.globalsSize * 4);
 				#end
 				#else
+				#if mergeBatches mb.draw(curIndexBuffer); #end
 				var a = buf.globals.subarray(0, s.shader.globalsSize * 4);
 				gl.uniform4fv(s.globals, a);
 				#end
@@ -505,23 +647,28 @@ class GlDriver extends Driver {
 				var src = streamData(hl.Bytes.getArray(buf.params.toData()), 0, s.shader.paramsSize * 16);
 				var hashVal = xxhash.Hash.h32(src, s.shader.paramsSize * 16, 0x0);
 				if (hashVal != s.paramsHash) {
+					#if mergeBatches mb.draw(curIndexBuffer); #end
 					gl.uniform4fv(s.params, src, 0, s.shader.paramsSize * 4);
 					s.paramsHash = hashVal;
 				}
 				#else
+				#if mergeBatches mb.draw(curIndexBuffer); #end
 				gl.uniform4fv(s.params, streamData(hl.Bytes.getArray(buf.params.toData()), 0, s.shader.paramsSize * 16), 0, s.shader.paramsSize * 4);
 				#end
 				#else
+				#if mergeBatches mb.draw(curIndexBuffer); #end
 				var a = buf.params.subarray(0, s.shader.paramsSize * 4);
 				gl.uniform4fv(s.params, a);
 				#end
 			}
 		case Buffers:
 			if( s.buffers != null ) {
+				#if mergeBatches mb.draw(curIndexBuffer); #end
 				for( i in 0...s.buffers.length )
 					gl.bindBufferBase(GL2.UNIFORM_BUFFER, i, @:privateAccess buf.buffers[i].buffer.vbuf.b);
 			}
 		case Textures:
+			#if mergeBatches mb.draw(curIndexBuffer); #end
 			var tcount = s.textures.length;
 			for( i in 0...s.textures.length ) {
 				var t = buf.tex[i];
@@ -565,6 +712,7 @@ class GlDriver extends Driver {
 				var mip = Type.enumIndex(t.mipMap);
 				var filter = Type.enumIndex(t.filter);
 				var wrap = Type.enumIndex(t.wrap);
+
 				var bits = mip | (filter << 3) | (wrap << 6);
 				if( bits != t.t.bits ) {
 					t.t.bits = bits;
@@ -623,6 +771,7 @@ class GlDriver extends Driver {
 		if( curMatBits < 0 ) diff = -1;
 		if( diff == 0 )
 			return;
+		#if mergeBatches mb.draw(curIndexBuffer); #end
 
 		var wireframe = bits & Pass.wireframe_mask != 0;
 		#if hlsdl
@@ -699,6 +848,7 @@ class GlDriver extends Driver {
 		var diffMask = maskBits ^ curStMaskBits;
 
 		if ( (diffOp | diffMask) == 0 ) return;
+		#if mergeBatches mb.draw(curIndexBuffer); #end
 
 		if( diffOp & (Stencil.frontSTfail_mask | Stencil.frontDPfail_mask | Stencil.frontPass_mask) != 0 ) {
 			gl.stencilOpSeparate(
@@ -1138,11 +1288,20 @@ class GlDriver extends Driver {
 	}
 
 	override function uploadTexturePixels( t : h3d.mat.Texture, pixels : hxd.Pixels, mipLevel : Int, side : Int ) {
+		#if mergeBatches
+		for (i in 0...boundTextures.length)
+			if (boundTextures[i] == t.t) {
+				mb.draw(curIndexBuffer);
+				break;
+			}
+		#end
+
 		var cubic = t.flags.has(Cube);
 		var bind = getBindType(t);
 		if( t.flags.has(IsArray) ) throw "TODO:texImage3D";
 		var face = cubic ? CUBE_FACES[side] : GL.TEXTURE_2D;
 		gl.bindTexture(bind, t.t.t);
+
 		switch (t.format) {
 			case BC1, BC2, BC3, BC4, BC5, BC6H, BC7:
 				#if hlsdl
@@ -1175,6 +1334,7 @@ class GlDriver extends Driver {
 	}
 
 	override function uploadVertexBuffer( v : VertexBuffer, startVertex : Int, vertexCount : Int, buf : hxd.FloatBuffer, bufPos : Int ) {
+		#if mergeBatches mb.updateVB(curIndexBuffer, v, startVertex, vertexCount); #end
 		var stride : Int = v.stride;
 		gl.bindBuffer(GL.ARRAY_BUFFER, v.b);
 		#if hl
@@ -1189,6 +1349,7 @@ class GlDriver extends Driver {
 	}
 
 	override function uploadVertexBytes( v : VertexBuffer, startVertex : Int, vertexCount : Int, buf : haxe.io.Bytes, bufPos : Int ) {
+		#if mergeBatches mb.updateVB(curIndexBuffer, v, startVertex, vertexCount); #end
 		var stride : Int = v.stride;
 		gl.bindBuffer(GL.ARRAY_BUFFER, v.b);
 		#if hl
@@ -1249,6 +1410,7 @@ class GlDriver extends Driver {
 			curBuffer = v;
 			return;
 		}
+		#if mergeBatches mb.draw(curIndexBuffer); #end
 
 		if( curShader == null )
 			throw "No shader selected";
@@ -1296,6 +1458,7 @@ class GlDriver extends Driver {
 	}
 
 	override function selectMultiBuffers( buffers : Buffer.BufferOffset ) {
+		#if mergeBatches mb.draw(curIndexBuffer); #end
 		for( a in curShader.attribs ) {
 			gl.bindBuffer(GL.ARRAY_BUFFER, @:privateAccess buffers.buffer.buffer.vbuf.b);
 			gl.vertexAttribPointer(a.index, a.size, a.type, false, buffers.buffer.buffer.stride * 4, buffers.offset * 4);
@@ -1310,6 +1473,20 @@ class GlDriver extends Driver {
 			curIndexBuffer = ibuf;
 			gl.bindBuffer(GL.ELEMENT_ARRAY_BUFFER, ibuf.b);
 		}
+		#if mergeBatches
+		if ((ntriangles * 3) < mb.c_Threshold) {
+			switch (mb.merge(curIndexBuffer.is32, startIndex, ntriangles, GL.TRIANGLES)) {
+				case -1:
+					throw ("draw -> mb.merge ERROR 1");
+				case 1:
+					trace("[INFO] mb.merge OVERFLOW");
+					mb.draw(curIndexBuffer);
+					if (mb.merge(curIndexBuffer.is32, startIndex, ntriangles, GL.TRIANGLES) != 0)
+						throw ("draw -> mb.merge ERROR 2");
+			}
+			return;
+		}
+		#end
 		if( ibuf.is32 )
 			gl.drawElements(drawMode, ntriangles * 3, GL.UNSIGNED_INT, startIndex * 4);
 		else
@@ -1349,6 +1526,7 @@ class GlDriver extends Driver {
 	}
 
 	override function drawInstanced( ibuf : IndexBuffer, commands : InstanceBuffer ) {
+		#if mergeBatches mb.draw(curIndexBuffer); #end
 		if( ibuf != curIndexBuffer ) {
 			curIndexBuffer = ibuf;
 			gl.bindBuffer(GL.ELEMENT_ARRAY_BUFFER, ibuf.b);
@@ -1378,6 +1556,7 @@ class GlDriver extends Driver {
 	}
 
 	override function present() {
+		#if mergeBatches mb.draw(curIndexBuffer); #end
 		#if hlsdl
 		@:privateAccess hxd.Window.inst.window.present();
 		#elseif usesys
@@ -1393,7 +1572,19 @@ class GlDriver extends Driver {
 		#end
 	}
 
+	#if mergeBatches
+	var rzx : Int = 1024 * 1024 * 1024;
+	var rzy : Int = 1024 * 1024 * 1024;
+	var rzw : Int =-1024 * 1024 * 1024;
+	var rzh : Int =-1024 * 1024 * 1024;
+	#end
 	override function setRenderZone( x : Int, y : Int, width : Int, height : Int ) {
+		#if mergeBatches
+		if ((rzx != x) || (rzy != y) || (rzw != width) || (rzh != height)) {
+			mb.draw(curIndexBuffer);
+			rzx = x;  rzy = y;  rzw = width;  rzh = height;
+		}
+		#end
 		if( x == 0 && y == 0 && width < 0 && height < 0 )
 			gl.disable(GL.SCISSOR_TEST);
 		else {
@@ -1426,6 +1617,7 @@ class GlDriver extends Driver {
 	}
 
 	override function capturePixels(tex:h3d.mat.Texture, layer:Int, mipLevel:Int) {
+		#if mergeBatches mb.draw(curIndexBuffer); #end
 		var old = curTarget;
 		var oldCount = numTargets;
 		var oldLayer = curTargetLayer;
@@ -1451,6 +1643,10 @@ class GlDriver extends Driver {
 	}
 
 	override function setRenderTarget( tex : h3d.mat.Texture, layer = 0, mipLevel = 0 ) {
+		#if mergeBatches
+		if ((numTargets > 1) || (curTarget != tex))
+			mb.draw(curIndexBuffer);
+		#end
 		unbindTargets();
 		curTarget = tex;
 		if( tex == null ) {
@@ -1511,6 +1707,19 @@ class GlDriver extends Driver {
 	}
 
 	override function setRenderTargets( textures : Array<h3d.mat.Texture> ) {
+		#if mergeBatches
+		var bDraw : Bool = false;
+		if (numTargets == textures.length) {
+			for (i in 0...textures.length)
+				if (textures[i] != curTargets[i]) {
+					bDraw = true;
+					break;
+				}
+		}
+		else bDraw = true;
+		if (bDraw)
+			mb.draw(curIndexBuffer);
+		#end
 		unbindTargets();
 		setRenderTarget(textures[0]);
 		if( textures.length < 2 )
@@ -1616,6 +1825,7 @@ class GlDriver extends Driver {
 	#end
 
 	override function captureRenderBuffer( pixels : hxd.Pixels ) {
+		#if mergeBatches mb.draw(curIndexBuffer); #end
 		if( curTarget == null )
 			throw "Can't capture main render buffer in GL";
 		discardError();
@@ -1654,11 +1864,13 @@ class GlDriver extends Driver {
 		case TimeStamp:
 			throw "use endQuery() for timestamp queries";
 		case Samples:
+			#if mergeBatches mb.draw(curIndexBuffer); #end
 			GL.beginQuery(GL.SAMPLES_PASSED, q.q);
 		}
 	}
 
 	override function endQuery( q : Query ) {
+		#if mergeBatches mb.draw(curIndexBuffer); #end
 		switch( q.kind ) {
 		case TimeStamp:
 			GL.queryCounter(q.q, GL.TIMESTAMP);
