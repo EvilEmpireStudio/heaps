@@ -164,3 +164,87 @@ class ConvertFNT2BFNT extends Convert {
 		return emptyTile;
 	}
 }
+
+class ConvertPNGtoEEF extends Convert {
+	var compressLevel : Int;
+	var bWarn : Bool;
+
+	public function new(complvl : Int) {
+		super("png", "eef");
+		compressLevel = complvl;
+		bWarn = true;
+	}
+
+	static function getColorType(fileName : String) : Int {
+		var fin = sys.io.File.read(fileName);
+		fin.bigEndian = true;
+		if ((fin.readInt32() != 0x89504E47) || (fin.readInt32() != 0x0D0A1A0A)) 
+			throw "NOT a PNG file : " + fileName; // Wrong MagicNumber...
+		var len = fin.readInt32();
+		var chunkType = fin.readInt32();
+		if ((len != 13) || ((chunkType != ('I'.code << 24) | ('H'.code << 16) | ('D'.code << 8) | 'R'.code)))
+			throw "Wrong PNG file : " + fileName + ', len = ' + len + ", chunkType = " + chunkType;
+		for (i in 0...9) // Skip Width, Heigth & BitDepth
+			fin.readInt8();
+		var colorType = fin.readInt8();
+		fin.close();
+		return colorType;
+	}
+
+	function convertPNGtoDDS(nMipMaps : Int = 0, bSilent : Bool = true) : String {
+		if (srcPath.indexOf("gradients/") != -1)
+			return null; // Do NOT convert gradients maps
+		var sdkRoot = Sys.getEnv("NINTENDO_SDK_ROOT");
+		if ((Sys.systemName() != "Windows") || (sdkRoot == null)) {
+			if (bWarn) {
+				trace("Invalid configuration (will not convert)");
+				trace("\tsystemName = " + Sys.systemName);
+				trace("\tsdkRoot = " + sdkRoot);
+				bWarn = false;
+			}
+			return null;
+		}
+		var format;
+		switch (getColorType(srcPath)) {
+			case 4, 6:	format = "unorm_bc3";
+			default:	format = "unorm_bc1";
+		}
+		var cmd = sdkRoot + "/Tools/Graphics/3dTools/3dTextureConverter.exe";
+		var dstName = dstPath.split(".eef")[0] + ".dds";
+		var params = [srcPath, "-o", dstName, "-f", format];
+		params.push("-i " + nMipMaps);
+		if (bSilent)
+			params.push("--silent");
+		var ret = Sys.command(cmd, params);
+		if (ret != 0)
+			throw cmd + " FAILED : " + srcPath + ", returnCode = " + ret;
+		return dstName;
+	}
+
+	function convertDDStoEEF(ddsName : String) {
+		var fin = sys.io.File.read(ddsName);
+		var src = fin.readAll();
+		fin.close();
+		if (src.getInt32(0) != hxd.res.Image.MagicNumber.MN_DDS)
+			throw "Wrong DDS file : " + ddsName;
+		var rawSize : Int = src.length;
+		var res = haxe.zip.Compress.run(src, compressLevel);
+		var zipSize : Int = res.length;
+		var fout = sys.io.File.write(dstPath);
+		fout.writeInt32(hxd.res.Image.MagicNumber.MN_EEF);
+		fout.writeInt32(zipSize);
+		fout.writeInt32(rawSize);
+		fout.write(res);
+		fout.close();
+	}
+
+	override function convert() {
+		var ddsName = convertPNGtoDDS();
+		if (ddsName == null) // Keep the PNG untouched
+			sys.io.File.copy(srcPath, dstPath);
+		else { // Replace it by an 'EEF' file (and remove temp DDS file)
+			convertDDStoEEF(ddsName);
+			sys.FileSystem.deleteFile(ddsName);
+		}
+	}
+}

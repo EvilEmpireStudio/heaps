@@ -233,6 +233,9 @@ class Build {
 				b.checkOGG = true;
 			case "-pngcrush":
 				b.converts.push(new hxd.fs.Convert.Command("png","crush.png","pngcrush",["-s","%SRC","%DST"]));
+			case "-png2eef":
+				var compressionLevel = (args.length > 0) ? Std.parseInt(args.shift()) : -1;
+				b.converts.push(new hxd.fs.Convert.ConvertPNGtoEEF(compressionLevel));
 			default:
 				throw "Unknown parameter " + f;
 			}

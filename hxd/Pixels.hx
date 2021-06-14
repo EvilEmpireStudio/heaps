@@ -401,6 +401,7 @@ class Pixels {
 		case RGB32F: 12;
 		case RGB10A2: 4;
 		case RG11B10UF: 4;
+		case BC1, BC2, BC3, BC4, BC5, BC6H, BC7: 1; // FIXME : Do NOT use 'getBytesPerPixel' with BCx
 		}
 	}
 
@@ -430,6 +431,8 @@ class Pixels {
 			channel.toInt() * 4;
 		case RGB10A2, RG11B10UF:
 			throw "Bit packed format";
+		case BC1, BC2, BC3, BC4, BC5, BC6H, BC7:
+			throw "Compressed format";
 		}
 	}
 

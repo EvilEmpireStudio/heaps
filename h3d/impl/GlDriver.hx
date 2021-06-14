@@ -835,6 +835,8 @@ class GlDriver extends Driver {
 		var tt = gl.createTexture();
 		var bind = getBindType(t);
 		var tt : Texture = { t : tt, width : t.width, height : t.height, internalFmt : GL.RGBA, pixelFmt : GL.UNSIGNED_BYTE, bits : -1, bind : bind #if multidriver, driver : this #end };
+		t.lastFrame = frame;
+		t.flags.unset(WasCleared);
 		switch( t.format ) {
 		case RGBA:
 			// default
@@ -882,11 +884,19 @@ class GlDriver extends Driver {
 			tt.internalFmt = GL2.R11F_G11F_B10F;
 			tt.pixelFmt = GL2.UNSIGNED_INT_10F_11F_11F_REV;
 		#end
+		#if hlsdl
+		case BC1:	tt.internalFmt = GL.COMPRESSED_RGBA_S3TC_DXT1;		return tt;
+		case BC2:	tt.internalFmt = GL.COMPRESSED_RGBA_S3TC_DXT3;		return tt;
+		case BC3:	tt.internalFmt = GL.COMPRESSED_RGBA_S3TC_DXT5;		return tt;
+		case BC4:	tt.internalFmt = GL.COMPRESSED_RED_RGTC1;			return tt; // Assumed "Unsigned byte"
+		case BC5:	tt.internalFmt = GL.COMPRESSED_RED_GREEN_RGTC2;		return tt; // Assumed "Unsigned byte"
+		case BC6H:	tt.internalFmt = GL.COMPRESSED_RGB_BPTC_UFLOAT;		return tt; // Assumed "Unsigned (half) float"
+		case BC7:	tt.internalFmt = GL.COMPRESSED_RGBA_BPTC_UNORM;		return tt;
+		#end
 		default:
 			throw "Unsupported texture format "+t.format;
 		}
-		t.lastFrame = frame;
-		t.flags.unset(WasCleared);
+
 		gl.bindTexture(bind, tt.t);
 		var outOfMem = false;
 
@@ -1133,23 +1143,34 @@ class GlDriver extends Driver {
 		if( t.flags.has(IsArray) ) throw "TODO:texImage3D";
 		var face = cubic ? CUBE_FACES[side] : GL.TEXTURE_2D;
 		gl.bindTexture(bind, t.t.t);
-		pixels.convert(t.format);
-		pixels.setFlip(false);
-		#if hl
-		gl.texImage2D(face, mipLevel, t.t.internalFmt, pixels.width, pixels.height, 0, getChannels(t.t), t.t.pixelFmt, streamData(pixels.bytes.getData(),pixels.offset,pixels.width*pixels.height*pixels.bytesPerPixel));
-		#elseif lime
-		gl.texImage2D(face, mipLevel, t.t.internalFmt, pixels.width, pixels.height, 0, getChannels(t.t), t.t.pixelFmt, bytesToUint8Array(pixels.bytes));
-		#elseif js
-		var buffer = switch( t.format ) {
-		case RGBA32F, R32F, RG32F, RGB32F: new js.html.Float32Array(@:privateAccess pixels.bytes.b.buffer);
-		case RGBA16F, R16F, RG16F, RGB16F: new js.html.Uint16Array(@:privateAccess pixels.bytes.b.buffer);
-		case RGB10A2, RG11B10UF: new js.html.Uint32Array(@:privateAccess pixels.bytes.b.buffer);
-		default: bytesToUint8Array(pixels.bytes);
+		switch (t.format) {
+			case BC1, BC2, BC3, BC4, BC5, BC6H, BC7:
+				#if hlsdl
+				var dataSrc = streamData(pixels.bytes.getData(), pixels.offset, pixels.bytes.length);
+				gl.compressedTexImage2D(face, mipLevel, t.t.internalFmt, pixels.width, pixels.height, 0, pixels.bytes.length, dataSrc);
+				#else
+				throw "BCx unsupported";
+				#end
+			default:
+				pixels.convert(t.format);
+				pixels.setFlip(false);
+				#if hl
+				gl.texImage2D(face, mipLevel, t.t.internalFmt, pixels.width, pixels.height, 0, getChannels(t.t), t.t.pixelFmt, streamData(pixels.bytes.getData(),pixels.offset,pixels.width*pixels.height*pixels.bytesPerPixel));
+				#elseif lime
+				gl.texImage2D(face, mipLevel, t.t.internalFmt, pixels.width, pixels.height, 0, getChannels(t.t), t.t.pixelFmt, bytesToUint8Array(pixels.bytes));
+				#elseif js
+				var buffer = switch( t.format ) {
+				case RGBA32F, R32F, RG32F, RGB32F: new js.html.Float32Array(@:privateAccess pixels.bytes.b.buffer);
+				case RGBA16F, R16F, RG16F, RGB16F: new js.html.Uint16Array(@:privateAccess pixels.bytes.b.buffer);
+				case RGB10A2, RG11B10UF: new js.html.Uint32Array(@:privateAccess pixels.bytes.b.buffer);
+				default: bytesToUint8Array(pixels.bytes);
+				}
+				gl.texImage2D(face, mipLevel, t.t.internalFmt, pixels.width, pixels.height, 0, getChannels(t.t), t.t.pixelFmt, buffer);
+				#else
+				throw "Not implemented";
+				#end
 		}
-		gl.texImage2D(face, mipLevel, t.t.internalFmt, pixels.width, pixels.height, 0, getChannels(t.t), t.t.pixelFmt, buffer);
-		#else
-		throw "Not implemented";
-		#end
+
 		restoreBind();
 	}
 
