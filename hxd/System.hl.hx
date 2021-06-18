@@ -63,28 +63,11 @@ class System {
 		#elseif hlsdl
 		if( !sdl.Sdl.processEvents(@:privateAccess hxd.Window.inst.onEvent) )
 			return false;
-		#elseif stadia
-		if (!vk.Stadia.processEvents())
-			return false;
 		#end
 
 		// loop
 		timeoutTick();
-		if( loopFunc != null ) {
-			#if stadia
-			if (!vk.Stadia.isStreaming()) {
-				if (Audio.ME != null)
-					Audio.ME.pauseMusic(true);
-			}
-			else {
-				if (Audio.ME != null)
-					Audio.ME.pauseMusic(false);
-				loopFunc();
-			}
-			#else
-			loopFunc();
-			#end
-		}
+		if( loopFunc != null ) loopFunc();
 
 		// present
 		var cur = h3d.Engine.getCurrent();
@@ -120,25 +103,6 @@ class System {
 		#elseif hldx
 			@:privateAccess Window.inst = new Window(title, width, height);
 			init();
-		#elseif stadia
-			vk.Stadia.init();
-			for (i in 0...100) {
-				if (i == 99) 
-					Sys.exit(0);
-				if (!vk.Stadia.processEvents())
-					break;
-				if (vk.Stadia.isStarted()) {
-					var r = vk.Stadia.getResolution();
-					if (r != -1) {
-						width = r >>> 16;
-						height = r & 0xFFFF;
-						break;		
-					}
-				}
-				Sys.sleep(0.6); // Init timeout : 1 minute (0.6*100)
-			}
-			@:privateAccess Window.inst = new Window(title, width, height);
-			init();
 		#else
 			@:privateAccess Window.inst = new Window(title, width, height);
 			init();
@@ -171,9 +135,6 @@ class System {
 			hxt.advance_frame();
 			#end
 		}
-		#if stadia
-		vk.Stadia.cleanUp();
-		#end
 		Sys.exit(0);
 	}
 
@@ -260,11 +221,6 @@ class System {
 		if( !cursorVisible ) {
 			cursorVisible = true;
 			Cursor.show(true);
-		}
-		#elseif stadia
-		switch (c) { // TODO : case Move / TextInput / ...
-			case Button: vk.Stadia.setCursor(1);
-			default: 	 vk.Stadia.setCursor(0);
 		}
 		#end
 	}

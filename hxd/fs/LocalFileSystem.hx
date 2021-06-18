@@ -220,7 +220,7 @@ class LocalFileSystem implements FileSystem {
 		baseDir = froot.split("\\").join("/");
 		if( !StringTools.endsWith(baseDir, "/") ) baseDir += "/";
 		root = new LocalEntry(this, "root", null, baseDir);
-		tmpDir = #if stadia "/tmp/"; #else  baseDir + ".tmp/"; #end
+		tmpDir = baseDir + ".tmp/";
 		#if sys
 		try sys.FileSystem.createDirectory(tmpDir) catch( e : Dynamic ) {};
 		#end
