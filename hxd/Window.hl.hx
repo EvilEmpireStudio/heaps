@@ -39,7 +39,12 @@ class Window {
 		eventTargets = new List();
 		resizeEvents = new List();
 		#if hlsdl
-		window = new sdl.Window(title, width, height #if vulkan , 0xFFFFFFFF #end);
+		#if vulkan
+		window = new sdl.Window(title, width, height, sdl.Window.SDL_WINDOWPOS_CENTERED, sdl.Window.SDL_WINDOWPOS_CENTERED,
+			sdl.Window.SDL_WINDOW_SHOWN | sdl.Window.SDL_WINDOW_RESIZABLE | sdl.Window.SDL_WINDOW_VULKAN);
+		#else
+		window = new sdl.Window(title, width, height);
+		#end
 		#elseif hldx
 		window = new dx.Window(title, width, height);
 		#end

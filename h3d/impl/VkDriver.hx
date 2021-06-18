@@ -15,10 +15,14 @@ class VkDriver extends h3d.impl.Driver {
 	var shaderInfos = new Map<Int, Int>();	// shader.id -> (fs_TexNot2D_Count 4bits | fs_Tex2D_Count 4bits | vkShaderID 24bits)
 
 	public function new(antiAlias = 0) {
-		Vk.init("Dead Cells", 1, "heaps", 1);
+		if (!Vk.init("Dead Cells", 1, "heaps", 1))
+			throw "Vulkan init FAILED";
 		#if hlsdl
 		@:privateAccess if (!Vk.useSdl(hxd.Window.getInstance().window.win))
 			throw "Fatal error : Can't present on the SDL surface";
+			trace("Vulkan init (using a SDL window) SUCCESS");
+		#else
+		trace("Vulkan init SUCCESS");
 		#end
 	}
 
