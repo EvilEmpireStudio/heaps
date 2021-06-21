@@ -192,8 +192,11 @@ class ConvertPNGtoEEF extends Convert {
 	}
 
 	function convertPNGtoDDS(nMipMaps : Int = 0, bSilent : Bool = true) : String {
-		if (srcPath.indexOf("gradients/") != -1)
+		var tmpStr = srcPath.toLowerCase();
+		if (tmpStr.indexOf("gradients/") != -1)
 			return null; // Do NOT convert gradients maps
+		if ((tmpStr.indexOf("beheaded") != -1) && (tmpStr.indexOf("_n.") == -1))
+			return null; // Do NOT convert 'indexed' beheaded (except normal maps)
 		var sdkRoot = Sys.getEnv("NINTENDO_SDK_ROOT");
 		if ((Sys.systemName() != "Windows") || (sdkRoot == null)) {
 			if (bWarn) {
